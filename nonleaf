@@ -1,0 +1,117 @@
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, img_to_array, load_img
+from tensorflow.keras.models import Model
+import os
+import zipfile
+from google.colab import files
+
+# Step 1: Upload the dataset and input image
+print("Please upload the dataset zip file (non-leaf.zip):")
+uploaded = files.upload()
+
+# Unzip the file
+for filename in uploaded.keys():
+    if filename.endswith('.zip'):
+        with zipfile.ZipFile(filename, 'r') as zip_ref:
+            zip_ref.extractall('/content/non-leaf')
+
+# Verify the extracted directories
+base_dir = '/content/non-leaf'
+expected_dirs = ['test', 'train', 'validation']
+
+missing_dirs = [subdir for subdir in expected_dirs if not os.path.exists(os.path.join(base_dir, subdir))]
+if missing_dirs:
+    print(f"Error: Expected directories {missing_dirs} not found. Check the zip file structure.")
+    raise FileNotFoundError(f"Directories {missing_dirs} not found.")
+
+# Debug: Display the contents of the train, test, and validation directories
+for dir_name in expected_dirs:
+    dir_path = os.path.join(base_dir, dir_name)
+    print(f"Contents of the {dir_name} directory ({dir_path}):")
+    for subdir in os.listdir(dir_path):
+        subdir_path = os.path.join(dir_path, subdir)
+        if os.path.isdir(subdir_path):
+            print(f"Contents of {subdir_path}:")
+            print(os.listdir(subdir_path))
+
+# Upload the input image
+print("Please upload the input image:")
+uploaded = files.upload()
+input_image_path = list(uploaded.keys())[0]
+
+# Step 2: Prepare ImageDataGenerator for the dataset
+img_size = (150, 150)
+batch_size = 32
+
+datagen = ImageDataGenerator(rescale=1./255)
+
+# Verify and prepare train directory
+train_dir = os.path.join(base_dir, 'train')
+print(f"Contents of the training directory ({train_dir}):")
+print(os.listdir(train_dir))
+for subdir in os.listdir(train_dir):
+    subdir_path = os.path.join(train_dir, subdir)
+    if os.path.isdir(subdir_path):
+        print(f"Contents of {subdir_path}:")
+        print(os.listdir(subdir_path))
+
+train_generator = datagen.flow_from_directory(
+    train_dir,
+    target_size=img_size,
+    batch_size=batch_size,
+    class_mode=None,  # We don't need labels.
+    shuffle=False
+)
+
+# Check if the generator is empty
+if train_generator.samples == 0:
+    print("Error: No images found in the training directory. Check the path and dataset structure.")
+else:
+    # Step 3: Load pre-trained VGG16 model
+    model = VGG16(weights='imagenet', include_top=False, input_shape=(150, 150, 3))
+
+    def preprocess_image(img_path, target_size):
+        img = load_img(img_path, target_size=target_size)
+        img_array = img_to_array(img) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
+        return img_array
+
+    def extract_features(img_array, model):
+        features = model.predict(img_array)
+        return features.flatten()
+
+    # Extract features from the dataset images
+    dataset_features = []
+    for batch in train_generator:
+        batch_features = model.predict(batch)
+        batch_features = batch_features.reshape(batch.shape[0], -1)
+        dataset_features.extend(batch_features)
+
+    dataset_features = np.array(dataset_features)
+
+    # Determine the anomaly threshold from the training data
+    reconstruction_errors_train = []
+    for features in dataset_features:
+        features = features.reshape(1, *features.shape)
+        reconstructed_features = model.predict(features)
+        error = np.mean(np.square(features.flatten() - reconstructed_features.flatten()))
+        reconstruction_errors_train.append(error)
+
+    threshold = np.percentile(reconstruction_errors_train, 95)
+    print("Anomaly Threshold:", threshold)
+
+    # Step 4: Define anomaly detection function
+    def is_anomalous(img_path, model, threshold):
+        img_array = preprocess_image(img_path, img_size)
+        features = extract_features(img_array, model)
+        features = features.reshape(1, *features.shape)
+        reconstructed_features = model.predict(features)
+        error = np.mean(np.square(features.flatten() - reconstructed_features.flatten()))
+        return error > threshold
+
+    # Test the anomaly detection with the input image
+    anomaly = is_anomalous(input_image_path, model, threshold)
+
+    print("Is the image anomalous?", anomaly)

@@ -5,6 +5,7 @@ import 'package:crop/screens/register_page.dart';
 import 'package:crop/components/header.dart'; // Import the Header component
 import 'package:crop/components/custom_button.dart'; // Import the CustomButton component
 import 'package:crop/screens/enter_phone.dart';
+import 'package:crop/screens/re_home.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({Key? key}) : super(key: key);
@@ -114,6 +115,11 @@ class _LoginPageState extends State<LoginPage> {
                         text: 'Login',
                         color: const Color(0xFF006838), // Dark green color
                         onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => ReHomePage()),
+                          );
                           // Perform login action
                         },
                       ),
